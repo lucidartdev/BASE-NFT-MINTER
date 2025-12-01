@@ -79,6 +79,127 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
         
         return newTokenId;
     }
+    /**
+     * @notice Batch mint multiple NFTs (gas efficient for power users)
+     * @param tokenURIs Array of IPFS URIs
+     * @return tokenIds Array of newly minted token IDs
+     */
+    function batchMintNFTs(string[] memory tokenURIs) 
+        public 
+        payable 
+        nonReentrant 
+        returns (uint256[] memory) 
+    {
+        uint256 count = tokenURIs.length;
+        require(count > 0 && count <= 10, "Must mint 1-10 NFTs");
+        require(msg.value >= MINT_FEE * count, "Insufficient mint fee");
+        
+        uint256[] memory tokenIds = new uint256[](count);
+        
+        for (uint256 i = 0; i < count; i++) {
+            require(bytes(tokenURIs[i]).length > 0, "Token URI cannot be empty");
+            
+            _tokenIdCounter++;
+            uint256 newTokenId = _tokenIdCounter;
+            
+            _safeMint(msg.sender, newTokenId);
+            _setTokenURI(newTokenId, tokenURIs[i]);
+            
+            _userTokens[msg.sender].push(newTokenId);
+            _tokenMinter[newTokenId] = msg.sender;
+            
+            tokenIds[i] = newTokenId;
+            
+            emit NFTMinted(msg.sender, newTokenId, tokenURIs[i], block.timestamp);
+        }
+        
+        totalFeesCollected += MINT_FEE * count;
+        
+        // Refund excess
+        uint256 totalCost = MINT_FEE * count;
+        if (msg.value > totalCost) {
+            payable(msg.sender).transfer(msg.value - totalCost);
+        }
+        
+        return tokenIds;
+    }
     
+    /**
+     * @notice Withdraw collected fees (owner only)
+     */
+    function withdrawFees() public onlyOwner nonReentrant {
+        uint256 balance = address(this).balance;
+        require(balance > 0, "No fees to withdraw");
+        
+        emit FeesWithdrawn(msg.sender, balance, block.timestamp);
+        
+        payable(owner()).transfer(balance);
+    }
+    
+    /**
+     * @notice Get total number of NFTs minted
+     */
+    function getTotalMinted() public view returns (uint256) {
+        return _tokenIdCounter;
+    }
+    
+    /**
+     * @notice Get all token IDs owned by an address
+     */
+    function getUserTokens(address user) public view returns (uint256[] memory) {
+        return _userTokens[user];
+    }
+    
+    /**
+     * @notice Get the original minter of a token
+     */
+    function getTokenMinter(uint256 tokenId) public view returns (address) {
+        return _tokenMinter[tokenId];
+    }
+    
+    /**
+     * @notice Get contract balance
+     */
+    function getContractBalance() public view returns (uint256) {
+        return address(this).balance;
+    }
+    
+    /**
+     * @notice Get recent mints (last N tokens)
+     * @param count Number of recent tokens to return
+     */
+    function getRecentMints(uint256 count) 
+        public 
+        view 
+        returns (uint256[] memory) 
+    {
+        uint256 total = _tokenIdCounter;
+        if (total == 0) {
+            return new uint256[](0);
+        }
+        
+        uint256 returnCount = count > total ? total : count;
+        uint256[] memory recentTokenIds = new uint256[](returnCount);
+        
+        for (uint256 i = 0; i < returnCount; i++) {
+            recentTokenIds[i] = total - i;
+        }
+        
+        return recentTokenIds;
+    }
+    
+    /**
+     * @notice Check if address has minted any NFTs
+     */
+    function hasMinted(address user) public view returns (bool) {
+        return _userTokens[user].length > 0;
+    }
+    
+    /**
+     * @notice Get mint count for specific address
+     */
+    function getMintCount(address user) public view returns (uint256) {
+        return _userTokens[user].length;
+    }
     
     }
